@@ -199,16 +199,195 @@ saveButton.addEventListener("click", async () => {
 4. Implementa telemetría opcional (con consentimiento del usuario) para saber qué funciones se usan con más frecuencia.
 5. Añade pruebas automatizadas para scripts de contenido usando herramientas como **Jest** o **Vitest**.
 
-## 10. Flujos de depuración recomendados
-1. Activa `console.log` detallados en `background.js`, `popup.js` y `content.js` durante el desarrollo.
-2. Usa el menú **Develop → Show Extension Builder** para recargar rápidamente la extensión en Safari.
-3. Aprovecha los paneles **Network** y **Storage** del Web Inspector para verificar llamadas a la API y el contenido guardado en `browser.storage.local`.
+## 10. Mejora la experiencia de usuario
+1. Define un estilo consistente para el popup o panel flotante con una hoja de estilos (`popup.css`).
+2. Añade accesibilidad mediante roles ARIA y soporte para navegación por teclado.
+3. Proporciona indicadores claros de estado (enviando, recibido, error) y un historial de conversaciones.
+4. Considera un panel lateral persistente para sites compatibles usando `browser.sidebarAction` (Safari 17+) o un iframe inyectado.
 
-## 11. Recursos adicionales
-Además de la documentación oficial, considera revisar ejemplos de código abiertos y repositorios de referencia:
+Ejemplo de `popup.html` con consideraciones de accesibilidad:
 
+```html
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>ChatGPT Helper</title>
+  </head>
+  <body>
+    <form aria-label="Enviar pregunta a ChatGPT">
+      <label for="prompt">Pregunta</label>
+      <textarea
+        id="prompt"
+        name="prompt"
+        rows="4"
+        placeholder="Escribe tu consulta aquí"
+        required
+      ></textarea>
+      <button type="submit" id="send" aria-live="polite">Enviar</button>
+    </form>
+    <section aria-live="polite" aria-busy="false" id="output"></section>
+    <footer>
+      <button id="open-settings">Configurar API Key</button>
+    </footer>
+    <script src="popup.js"></script>
+  </body>
+</html>
+```
+
+Fragmento de `popup.css` para mejorar la presentación:
+
+```css
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0;
+  padding: 1rem;
+  width: 320px;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid #d0d7de;
+  padding: 0.5rem;
+}
+
+#output {
+  margin-top: 1rem;
+  min-height: 80px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background-color: #f8fafc;
+}
+```
+
+## 11. Conecta con la app contenedora
+1. Implementa un **App Extension Handler** en Swift para exponer funciones nativas (p. ej. almacenamiento seguro) a la WebExtension.
+2. Usa `SafariWebExtensionHandler` para responder a los mensajes enviados desde el `background.js` mediante `browser.runtime.sendNativeMessage`.
+3. Configura grupos de App (`App Groups`) en el panel **Signing & Capabilities** para compartir datos entre la app contenedora y la extensión.
+4. Desde la app contenedora, ofrece una interfaz para introducir la API key y sincronízala con la extensión mediante `UserDefaults(suiteName:)` o el llavero.
+
+Ejemplo mínimo en Swift del manejador de mensajes nativos:
+
+```swift
+import SafariServices
+
+class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
+    func beginRequest(with context: NSExtensionContext) {
+        guard let message = context.inputItems.first as? NSExtensionItem,
+              let userInfo = message.userInfo as? [String: Any],
+              let action = userInfo[SFExtensionMessageKey] as? String else {
+            context.completeRequest(returningItems: nil, completionHandler: nil)
+            return
+        }
+
+        switch action {
+        case "getApiKey":
+            let apiKey = SecureStore.shared.load()
+            let response = NSExtensionItem()
+            response.userInfo = [ SFExtensionMessageKey: ["apiKey": apiKey ?? ""] ]
+            context.completeRequest(returningItems: [response], completionHandler: nil)
+        default:
+            context.completeRequest(returningItems: nil, completionHandler: nil)
+        }
+    }
+}
+```
+
+En `background.js`, consume la API nativa cuando la clave no esté en caché:
+
+```javascript
+async function resolveApiKey() {
+  const { apiKey } = await browser.storage.local.get("apiKey");
+  if (apiKey) return apiKey;
+
+  if (!browser.runtime.sendNativeMessage) {
+    throw new Error("sendNativeMessage no está disponible en este navegador");
+  }
+
+  const response = await browser.runtime.sendNativeMessage("com.example.container", {
+    action: "getApiKey"
+  });
+
+  if (!response?.apiKey) {
+    throw new Error("No se pudo recuperar la API key desde la app contenedora");
+  }
+
+  await browser.storage.local.set({ apiKey: response.apiKey });
+  return response.apiKey;
+}
+```
+
+## 12. Automatiza pruebas y CI/CD
+1. Añade un `package.json` dentro de la carpeta WebExtension para gestionar dependencias de desarrollo.
+2. Integra herramientas como **ESLint**, **Prettier** y **Vitest/Jest** para validar scripts de fondo y contenido.
+3. Configura un flujo de GitHub Actions (o tu CI preferido) que ejecute `npm run lint` y `npm test` en cada push o pull request.
+4. Emplea **fastlane** o scripts de Xcode para automatizar la firma y el empaquetado de la app contenedora.
+
+Ejemplo de `package.json` orientado a pruebas:
+
+```json
+{
+  "name": "safari-chatgpt-extension",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/webextension-polyfill": "^0.10.3",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "vitest": "^1.6.0"
+  }
+}
+```
+
+Workflow básico de GitHub Actions (`.github/workflows/ci.yml`):
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instala Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Instala dependencias
+        run: npm ci
+      - name: Ejecuta lint y pruebas
+        run: |
+          npm run lint
+          npm test
+```
+
+## 13. Solución de problemas frecuentes
+- **La extensión no aparece en Safari**: verifica que ejecutaste la app contenedora con el esquema correcto y que activaste la extensión en Preferencias → Extensiones.
+- **Error 401/403 al llamar a la API**: confirma que la API key es válida, que tiene permisos suficientes y que la hora del sistema es correcta.
+- **`sendNativeMessage` no disponible**: en Safari anterior a 17 o en Chrome necesitas configurar un host de mensajes nativos separado.
+- **CORS o mixed content**: las llamadas a `https://api.openai.com` deben hacerse desde el background; evita ejecutarlas directamente desde páginas HTTP.
+- **Los scripts de contenido no se cargan**: comprueba los patrones en `matches`, el `run_at` y que los dominios estén incluidos en `host_permissions`.
+
+## Recursos adicionales
 - [Documentación de Safari Web Extensions](https://developer.apple.com/documentation/safariservices/safari_web_extensions)
-- [Guía de distribución de extensiones](https://developer.apple.com/documentation/safariservices/publishing_a_safari_web_extension)
-- [API de OpenAI](https://platform.openai.com/docs/api-reference)
-- [WebExtension Polyfill](https://github.com/mozilla/webextension-polyfill)
-- [Ejemplo oficial de Apple "Reading List" Extension](https://developer.apple.com/documentation/safariservices/safari_web_extensions/adding_a_safari_web_extension_to_your_mac_app)
+- [Guía oficial para publicar extensiones de Safari](https://developer.apple.com/documentation/safariservices/publishing_a_safari_web_extension)
+- [Referencia de la API de OpenAI](https://platform.openai.com/docs/api-reference)
+- [WebExtension Browser API Polyfill](https://github.com/mozilla/webextension-polyfill)
+- [Ejemplos de Safari Web Extensions de Apple](https://developer.apple.com/documentation/safariservices/safari_web_extensions/building_a_safari_web_extension)
+- [Ejemplo oficial "Reading List" Extension](https://developer.apple.com/documentation/safariservices/safari_web_extensions/adding_a_safari_web_extension_to_your_mac_app)
+
