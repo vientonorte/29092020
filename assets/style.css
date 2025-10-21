@@ -1,3 +1,69 @@
-body {
-    background-color: red;
+body.poem-body {
+    min-height: 100vh;
+    margin: 0;
+    background: radial-gradient(circle at top, #9d1f32 0%, #3a0410 65%, #160207 100%);
+    color: #f8f4f4;
+    font-family: "Courier New", Courier, monospace;
+    display: flex;
+    align-items: center;
+}
+
+main {
+    max-width: 680px;
+}
+
+h1,
+h2,
+h3 {
+    letter-spacing: 0.1rem;
+}
+
+p {
+    font-size: 1.1rem;
+    line-height: 1.8;
+}
+
+.lead {
+    font-size: 1.25rem;
+}
+
+.btn-outline-light {
+    border-width: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.2rem;
+}
+
+.poem-section {
+    margin-bottom: 3rem;
+}
+
+.poem-section h2 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.poem-section p {
+    margin-bottom: 0.4rem;
+}
+
+.poem-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.poem-nav a {
+    flex: 1;
+}
+
+blockquote {
+    margin: 2rem 0;
+    padding-left: 1.5rem;
+    border-left: 4px solid rgba(248, 244, 244, 0.45);
+    font-style: italic;
+}
+
+.punto {
+    padding-left: 0.25rem;
 }
